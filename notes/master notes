@@ -1,0 +1,609 @@
+# Workflow 11 — AI Invoice + Follow Up System
+## Complete Master Notes
+
+---
+
+## What This Workflow Does
+
+Someone fills a Google Form with client details.
+Invoice email goes out automatically within 1 minute.
+Sheet gets updated — Invoice Sent = Yes.
+Workflow waits 3 days.
+Checks if client paid.
+Paid = stops. Unpaid = friendly reminder sent automatically.
+Everything tracked in Google Sheets.
+
+---
+
+## Tools Used
+
+```
+Google Form   → Collect client and invoice details
+Google Sheets → Track invoice and payment status
+n8n           → Run the automation
+OpenAI        → Write invoice and follow up emails
+Gmail         → Send emails to clients
+```
+
+---
+
+## Full Flow
+
+```
+Client fills Google Form
+          ↓
+01 - Watch New Invoice
+     Checks Sheet every 1 minute
+          ↓
+02 - Extract Invoice Data
+     Cleans and sets default values
+          ↓
+03 - AI Write Invoice Email
+     GPT-4o-mini writes professional email
+          ↓
+04 - Parse AI Response
+     Extracts subject + body
+     Combines all data in one place
+          ↓
+05 - Send Invoice Email
+     Sends to client via Gmail
+          ↓
+06 - Mark Invoice Sent
+     Sheet update — Invoice Sent = Yes
+          ↓
+07 - Wait 3 Days
+     Workflow pauses
+          ↓
+08 - Check Payment Status
+     Reads fresh data from Sheet
+          ↓
+09 - IF Paid or Not
+     Paid = stop | Unpaid = follow up
+          ↓
+10 - Send Follow Up Email
+     Friendly reminder to client
+```
+
+---
+
+---
+
+# Episode 1 — Google Form Setup
+
+## What I Built
+A form where clients enter their own details.
+No manual data entry needed from the owner.
+Form submit = automation starts automatically.
+
+## Form Config
+```
+Title: Invoice Request Form
+
+Q1: Client Name — Short answer — Required ON
+Q2: Client Email — Short answer — Required ON
+Q3: Service Description — Paragraph — Required ON
+Q4: Invoice Amount ($) — Short answer — Required ON
+Q5: Payment Due Date — Date — Required ON
+```
+
+## Form → Sheets Connection
+```
+Responses tab → Sheets icon
+→ Connect to existing spreadsheet
+→ Invoice Request Form
+→ Create
+```
+
+## Extra Columns Added Manually in Sheet
+```
+G1: Status
+H1: Invoice Sent
+I1: Follow Up Sent
+```
+
+## Why I Did It This Way
+Form handles client input — owner touches nothing.
+Extra columns track workflow progress.
+n8n updates these columns as work gets done.
+Status starts empty — n8n sets it to Unpaid.
+Invoice Sent starts empty — n8n sets it to Yes after sending.
+This is how a real invoice tracking system works.
+
+---
+
+---
+
+# Episode 2 — Node 01 — Watch New Invoice
+
+## Node Info
+```
+Node Type : Google Sheets Trigger
+Node Name : 01 - Watch New Invoice
+Job       : Checks Sheet every 1 minute
+            New row = workflow fires
+```
+
+## Config
+```
+Credential : Google account
+Trigger On : Row Added
+Spreadsheet: Invoice Request Form (Responses)
+Sheet      : Form Responses 1
+Poll Times : Every 1 Minute
+```
+
+## Why I Built It This Way
+This is the starting gun of the workflow.
+Every time a client submits the form, this catches it.
+Polling every 1 minute means no lead waits more than 60 seconds.
+Fetch Test Event pulls the latest form response for testing.
+No need to submit a real form every time I test.
+
+## Critical Mistake I Avoided
+Never write to this Sheet from n8n.
+Google Form writes here automatically.
+n8n writing here too = double row problem.
+This Sheet is read only for n8n.
+
+---
+
+---
+
+# Episode 3 — Node 02 — Extract Invoice Data
+
+## Node Info
+```
+Node Type : Edit Fields (Set)
+Node Name : 02 - Extract Invoice Data
+Job       : Converts Form column names to short clean names
+            Sets default values for tracking fields
+```
+
+## Config
+```
+Type : Edit Fields (Set)
+Mode : Manual Mapping
+
+client_name    → {{ $json['Client Name'] }}
+client_email   → {{ $json['Client Email'] }}
+service        → {{ $json['Service Description'] }}
+amount         → {{ $json['Invoice Amount ($)'] }}
+due_date       → {{ $json['Payment Due Date'] }}
+status         → Unpaid
+invoice_sent   → No
+follow_up_sent → No
+```
+
+## Why I Built It This Way
+Form column names are long sentences.
+Short names like client_email are easier to use in every node after this.
+I set status = Unpaid and invoice_sent = No as defaults.
+These are the starting values before anything happens.
+n8n will update them as the workflow progresses.
+
+---
+
+---
+
+# Episode 4 — Node 03 — AI Write Invoice Email
+
+## Node Info
+```
+Node Type : OpenAI
+Node Name : 03 - AI Write Invoice Email
+Model     : GPT-4o-mini
+Job       : Reads client details and writes
+            a professional invoice email
+```
+
+## Config
+```
+Credential: OpenAI API Key
+Resource  : Text
+Operation : Message a Model
+Model     : GPT-4o-mini
+```
+
+## System Prompt
+```
+You are a professional billing assistant.
+
+Your job is to write a warm, professional
+invoice email to a client.
+
+RULES:
+- Address the client by first name
+- Mention the service clearly
+- Mention the amount clearly
+- Mention the due date clearly
+- Sound professional but friendly
+- Not too long — keep it clean
+- End with a thank you
+
+RESPONSE FORMAT:
+Return ONLY a valid JSON object. Nothing else.
+
+{
+  "subject": "<email subject line>",
+  "body"   : "<full email body>"
+}
+```
+
+## User Message
+```
+Client Name : {{ $json.client_name }}
+Service     : {{ $json.service }}
+Amount      : ${{ $json.amount }}
+Due Date    : {{ $json.due_date }}
+
+Write a professional invoice email.
+```
+
+## Why I Built It This Way
+AI writes a different email for every client — personalized.
+Rules keep the tone consistent — professional but warm.
+Return ONLY JSON means no extra text that breaks parsing.
+Subject and body as separate fields makes Gmail setup easier.
+
+---
+
+---
+
+# Episode 5 — Node 04 — Parse AI Response
+
+## Node Info
+```
+Node Type : Code Node
+Node Name : 04 - Parse AI Response
+Language  : JavaScript
+Mode      : Run Once for All Items
+Job       : Extracts AI output and combines
+            everything into one clean package
+```
+
+## Full Code
+```javascript
+const items = $input.all();
+const results = [];
+
+for (const item of items) {
+
+  const rawText = item.json.output[0].content[0].text;
+  const parsed = JSON.parse(rawText);
+
+  const node02 = $('02 - Extract Invoice Data');
+
+  results.push({
+    json: {
+      client_name   : node02.item.json['Client Name'],
+      client_email  : node02.item.json['Client Email'],
+      service       : node02.item.json['Service Description'],
+      amount        : node02.item.json['Invoice Amount ($)'],
+      due_date      : node02.item.json['Payment Due Date'],
+      status        : node02.item.json.status,
+      invoice_sent  : node02.item.json.invoice_sent,
+      follow_up_sent: node02.item.json.follow_up_sent,
+      subject       : parsed.subject,
+      body          : parsed.body
+    }
+  });
+}
+
+return results;
+```
+
+## Why I Built It This Way
+AI returns plain text. I cannot use it directly.
+I parse it and pull out subject and body.
+I combine Node 02 data here so everything is in one place.
+Every node after this references Node 04 for data.
+This is the central data hub of the workflow.
+
+## Critical Things
+```
+OpenAI response path in n8n:
+output[0].content[0].text ✅
+message.content ❌
+
+Node 02 reference:
+$('02 - Extract Invoice Data').item.json['Client Name'] ✅
+```
+
+---
+
+---
+
+# Episode 6 — Node 05 — Send Invoice Email
+
+## Node Info
+```
+Node Type : Gmail — Send Email
+Node Name : 05 - Send Invoice Email
+Job       : Sends AI written invoice to client
+```
+
+## Config
+```
+Credential: Gmail account
+Operation : Send
+To        : {{ $json.client_email }}
+Subject   : {{ $json.subject }}
+Message   : {{ $json.body }}
+```
+
+## Why I Built It This Way
+client_email, subject, body all come from Node 04.
+Node 04 has everything in one place — no jumping between nodes.
+Clean and simple.
+
+---
+
+---
+
+# Episode 7 — Node 06 — Mark Invoice Sent
+
+## Node Info
+```
+Node Type : Google Sheets — Update Row
+Node Name : 06 - Mark Invoice Sent
+Job       : Updates Sheet — Invoice Sent = Yes
+```
+
+## Config
+```
+Spreadsheet       : Invoice Request Form (Responses)
+Sheet             : Form Responses 1
+Column to match on: Client Email
+Client Email value: {{ $('04 - Parse AI Response').item.json.client_email }}
+
+Fields to update:
+Invoice Sent → Yes
+```
+
+## Why I Built It This Way
+After Node 05 Gmail Send, $json loses all data.
+Only Gmail metadata remains — id, threadId, labelIds.
+I must reference Node 04 directly to get client_email.
+This is a pattern that repeats everywhere in n8n.
+After any send or update node — reference the last data node by name.
+
+---
+
+---
+
+# Episode 8 — Node 07 — Wait 3 Days
+
+## Node Info
+```
+Node Type : Wait
+Node Name : 07 - Wait 3 Days
+Job       : Pauses workflow for 3 days
+            Resumes automatically
+```
+
+## Config
+```
+Resume: After Time Interval
+Amount: 3
+Unit  : Days
+```
+
+## Testing Config
+```
+Amount: 1
+Unit  : Minutes
+```
+
+## Why I Built It This Way
+Real invoices need time — 3 days is a reasonable window.
+n8n keeps the execution in memory during the wait.
+After 3 days it picks up exactly where it left off.
+For testing I used 1 minute — changed to 3 days for production.
+
+---
+
+---
+
+# Episode 9 — Node 08 — Check Payment Status
+
+## Node Info
+```
+Node Type : Google Sheets — Get Row
+Node Name : 08 - Check Payment Status
+Job       : Reads fresh payment status from Sheet
+            after the 3 day wait
+```
+
+## Config
+```
+Spreadsheet       : Invoice Request Form (Responses)
+Sheet             : Form Responses 1
+Column to match on: Client Email
+Value             : {{ $('04 - Parse AI Response').item.json.client_email }}
+```
+
+## Why I Built It This Way
+Owner may have manually marked the invoice as Paid during the 3 day wait.
+I need fresh data — not the data from before the wait.
+Getting the row fresh from Sheet gives me the current real status.
+If I used cached data I might send a follow up to someone who already paid.
+That looks unprofessional and damages the client relationship.
+
+---
+
+---
+
+# Episode 10 — Node 09 — IF Paid or Not
+
+## Node Info
+```
+Node Type : IF Node
+Node Name : 09 - IF Paid or Not
+Job       : Checks Status — stops if Paid
+            sends follow up if Unpaid
+```
+
+## Config
+```
+Value 1      : {{ $json.Status }}
+Operation    : Equal
+Value 2      : Paid
+Convert types: ON
+```
+
+## Output
+```
+True Branch  → Paid → Workflow ends
+False Branch → Unpaid → Follow up email sent
+```
+
+## Why I Built It This Way
+Sending a reminder to someone who already paid is embarrassing.
+This check prevents that completely.
+True branch has no node connected — workflow just stops.
+Convert types ON prevents string vs text comparison failures.
+
+---
+
+---
+
+# Episode 11 — Node 10 — Send Follow Up Email
+
+## Node Info
+```
+Node Type : Gmail — Send Email
+Node Name : 10 - Send Follow Up Email
+Job       : Sends friendly payment reminder
+            to unpaid clients
+```
+
+## Config
+```
+Credential: Gmail account
+Operation : Send
+
+To:
+{{ $('04 - Parse AI Response').item.json.client_email }}
+
+Subject:
+Friendly Reminder — Invoice for {{ $('04 - Parse AI Response').item.json.service }}
+
+Body:
+Hi {{ $('04 - Parse AI Response').item.json.client_name }},
+
+I hope you are doing well!
+
+This is a friendly reminder that your invoice
+for {{ $('04 - Parse AI Response').item.json.service }}
+amounting to ${{ $('04 - Parse AI Response').item.json.amount }}
+was due on {{ $('04 - Parse AI Response').item.json.due_date }}.
+
+If you have already made the payment,
+please ignore this message.
+
+If you have any questions, feel free to reach out.
+
+Thank you for your continued trust in our services!
+
+Best regards,
+Your Team 🙏
+```
+
+## Why I Built It This Way
+Friendly tone — not aggressive.
+"If you already paid, ignore this" removes awkwardness.
+Client does not feel chased — feels cared for.
+This keeps the relationship healthy while still collecting payment.
+
+---
+
+---
+
+# All Lessons Learned
+
+```
+Lesson 1 — Double Row Problem
+Form Response Sheet = read only for n8n.
+Google Form writes there automatically.
+n8n writing there too = every entry appears twice.
+
+Lesson 2 — Data Loss After Send Nodes
+After Gmail Send node, $json loses all workflow data.
+Always reference the last data node by name:
+$('04 - Parse AI Response').item.json.client_email ✅
+$json.client_email ❌
+
+Lesson 3 — Data Loss After Wait Node
+Same rule applies after Wait node.
+$json does not survive a Wait.
+Always use node name reference.
+
+Lesson 4 — Get Fresh Data After Wait
+After waiting 3 days, always read fresh data from Sheet.
+Owner may have manually updated Status during the wait.
+Cached data gives wrong results.
+
+Lesson 5 — Convert Types in IF Node
+Always ON. Without it, text comparisons fail silently.
+Workflow runs but goes to the wrong branch.
+
+Lesson 6 — OpenAI Response Path
+output[0].content[0].text ✅
+message.content ❌
+
+Lesson 7 — Wait Node Testing
+Use 1 Minute for testing.
+Use 3 Days for production.
+Never deploy with 1 Minute — clients get spammed.
+```
+
+---
+
+# Exam Results
+
+```
+Q1: Why is $json.client_email undefined after Wait node?
+A:  Because workflow pauses — $json does not persist.
+    Fix: $('04 - Parse AI Response').item.json.client_email ✅
+
+Q2: Why must Convert types be ON in IF node?
+A:  Without it, string values cannot be compared reliably.
+    Comparison fails silently — wrong branch taken.
+
+Q3: Why never write to Form Response Sheet from n8n?
+A:  Google Form already writes there.
+    n8n writing too = same data appears twice = double row problem.
+```
+
+---
+
+# Selling This as a Freelancer
+
+```
+Who needs this:
+Freelancers — designers, developers, writers
+Small agencies
+Consultants
+Any service business that invoices clients
+
+How much to charge:
+Starter      : $350 — invoice + 1 follow up + tracking
+Professional : $550 — custom templates + 2 follow ups
+Agency       : $700 + $100/mo — full setup + maintenance
+
+Pitch:
+Right now you send invoices manually and hope clients pay.
+When they do not, you feel awkward chasing them.
+So you wait. And sometimes the money never comes.
+
+This workflow sends the invoice automatically.
+Three days later, if they have not paid, a reminder goes out on its own.
+You never chase anyone again.
+Every invoice is tracked. Every follow up logged.
+You get paid faster — without the awkward conversations.
+```
+
+---
+
+*Workflow 11 Complete ✅*
+*Built with n8n · OpenAI · Gmail · Google Sheets*
