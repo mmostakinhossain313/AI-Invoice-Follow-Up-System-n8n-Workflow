@@ -1,0 +1,549 @@
+{
+  "name": "AI Invoice + Follow Up System — n8n Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "documentId": {
+          "__rl": true,
+          "value": "1kXMzl3zvFyKVaYsk97LdEgYv1Jj97pq4ruh1-axQvW4",
+          "mode": "list",
+          "cachedResultName": "Invoice Request Form (Responses)",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1kXMzl3zvFyKVaYsk97LdEgYv1Jj97pq4ruh1-axQvW4/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 108525004,
+          "mode": "list",
+          "cachedResultName": "Form Responses 1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1kXMzl3zvFyKVaYsk97LdEgYv1Jj97pq4ruh1-axQvW4/edit#gid=108525004"
+        },
+        "event": "rowAdded",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheetsTrigger",
+      "typeVersion": 1,
+      "position": [
+        -800,
+        -144
+      ],
+      "id": "d86b48ad-2b2d-4bb7-8630-4cee1b5c8155",
+      "name": "01 - Watch New Invoice",
+      "credentials": {
+        "googleSheetsTriggerOAuth2Api": {
+          "id": "oWLZtsTXLWr3PNY2",
+          "name": "Google Sheets Trigger OAuth2 API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "GPT-4O-MINI"
+        },
+        "responses": {
+          "values": [
+            {
+              "role": "system",
+              "content": "You are a professional billing assistant.\n\nYour job is to write a warm, professional\ninvoice email to a client.\n\nRULES:\n- Address the client by first name\n- Mention the service clearly\n- Mention the amount clearly\n- Mention the due date clearly\n- Sound professional but friendly\n- Not too long — keep it clean\n- End with a thank you\n\nRESPONSE FORMAT:\nReturn ONLY a valid JSON object. Nothing else.\n\n{\n  \"subject\": \"<email subject line>\",\n  \"body\"   : \"<full email body>\"\n}"
+            },
+            {
+              "content": "=Client Name : {{ $json['Client Name'] }}\nService     : {{ $json['Service Description'] }}\nAmount      :{{ $json['Invoice Amount ($)'] }}\nDue Date    : {{ $json['Payment Due Date'] }}\n\nWrite a professional invoice email."
+            }
+          ]
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.3,
+      "position": [
+        -496,
+        -80
+      ],
+      "id": "09f04d0f-8277-4365-b760-70893e8cd724",
+      "name": "03 - AI Write Invoice Email",
+      "credentials": {
+        "openAiApi": {
+          "id": "qkmcSIWhxRW61AM1",
+          "name": "OpenAI account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nconst results = [];\n\nfor (const item of items) {\n\n  const rawText = item.json.output[0].content[0].text;\n  const parsed = JSON.parse(rawText);\n\n  const node02 = $('02 - Extract Invoice Data');\n\n  results.push({\n    json: {\n      client_name   : node02.item.json['Client Name'],\n      client_email  : node02.item.json['Client Email'],\n      service       : node02.item.json['Service Description'],\n      amount        : node02.item.json['Invoice Amount ($)'],\n      due_date      : node02.item.json['Payment Due Date'],\n      status        : node02.item.json.status,\n      invoice_sent  : node02.item.json.invoice_sent,\n      follow_up_sent: node02.item.json.follow_up_sent,\n      subject       : parsed.subject,\n      body          : parsed.body\n    }\n  });\n}\n\nreturn results;"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -224,
+        -32
+      ],
+      "id": "e5f8b91d-ae20-40a5-863c-814a7fc433b1",
+      "name": "04 - Parse AI Response"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c2cce632-2476-473d-9eba-c505de7d2baa",
+              "name": "Timestamp",
+              "value": "={{ $json.Timestamp }}",
+              "type": "string"
+            },
+            {
+              "id": "aa9b80d2-53ff-4fef-8dac-d9beb9811b20",
+              "name": "Client Name",
+              "value": "={{ $json['Client Name'] }}",
+              "type": "string"
+            },
+            {
+              "id": "776f92e9-630d-4143-90db-79a036ce87bc",
+              "name": "Client Email",
+              "value": "={{ $json['Client Email'] }}",
+              "type": "string"
+            },
+            {
+              "id": "cf7619b1-3840-473b-b42e-cf8f13ba6e8a",
+              "name": "Service Description",
+              "value": "={{ $json['Service Description'] }}",
+              "type": "string"
+            },
+            {
+              "id": "ff42fb04-d386-43d0-8e41-3c003111dde5",
+              "name": "Invoice Amount ($)",
+              "value": "={{ $json['Invoice Amount ($)'] }}",
+              "type": "number"
+            },
+            {
+              "id": "90f27543-63b2-45d1-b86d-a7998a5f39d4",
+              "name": "Payment Due Date",
+              "value": "={{ $json['Payment Due Date'] }}",
+              "type": "string"
+            },
+            {
+              "id": "0656590c-4658-4655-93f7-073c9d36822e",
+              "name": "status",
+              "value": "Unpaid",
+              "type": "string"
+            },
+            {
+              "id": "5d533456-740c-4f4d-a9a1-902591077da7",
+              "name": "invoice_sent",
+              "value": "no",
+              "type": "string"
+            },
+            {
+              "id": "71f0b615-ef00-4843-af03-dbd55ba335a9",
+              "name": "follow_up_sent",
+              "value": "no",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -672,
+        -96
+      ],
+      "id": "551b1e0f-db30-4b2f-ada7-aba5ab704dd8",
+      "name": "02 - Extract Invoice Data"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.client_email }}",
+        "subject": "={{ $json.subject }}",
+        "message": "={{ $json.body }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        -64,
+        -16
+      ],
+      "id": "8862df7a-ca30-43e7-a4a6-c1f3a5497fe6",
+      "name": "05 - Send Invoice Email",
+      "webhookId": "2a5048c5-5915-4110-8844-ee2e59ff6dee",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "avXEZrxeOKp5jA9m",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "1kXMzl3zvFyKVaYsk97LdEgYv1Jj97pq4ruh1-axQvW4",
+          "mode": "list",
+          "cachedResultName": "Invoice Request Form (Responses)",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1kXMzl3zvFyKVaYsk97LdEgYv1Jj97pq4ruh1-axQvW4/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 108525004,
+          "mode": "list",
+          "cachedResultName": "Form Responses 1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1kXMzl3zvFyKVaYsk97LdEgYv1Jj97pq4ruh1-axQvW4/edit#gid=108525004"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Client Email": "={{ $('04 - Parse AI Response').item.json.client_email }}",
+            "Invoice Sent": "Yes"
+          },
+          "matchingColumns": [
+            "Client Email"
+          ],
+          "schema": [
+            {
+              "id": "Timestamp",
+              "displayName": "Timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Client Name",
+              "displayName": "Client Name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Client Email",
+              "displayName": "Client Email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Service Description",
+              "displayName": "Service Description",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Invoice Amount ($)",
+              "displayName": "Invoice Amount ($)",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Payment Due Date",
+              "displayName": "Payment Due Date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Status",
+              "displayName": "Status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Invoice Sent",
+              "displayName": "Invoice Sent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Follow Up Sent",
+              "displayName": "Follow Up Sent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        128,
+        -16
+      ],
+      "id": "a3ee0a1e-ffe4-4d29-b3f2-bb8cbbd4cec4",
+      "name": "06 - Mark Invoice Sent",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "Vvyaf4MtdtLlFXW1",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 1
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        288,
+        16
+      ],
+      "id": "47df68fb-dfd6-4fd3-b3f8-039955d11004",
+      "name": "07 - Wait 3 Days",
+      "webhookId": "b03c0e06-26a9-4cef-9cfa-91fc40441417"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "17soYtClrvaRN0ybtW7i8-GBri_JOxWst2AZ4JPKm0RU",
+          "mode": "list",
+          "cachedResultName": "Workflow 10 - Email Auto Responder",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/17soYtClrvaRN0ybtW7i8-GBri_JOxWst2AZ4JPKm0RU/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "gid=0",
+          "mode": "list",
+          "cachedResultName": "Sheet1",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/17soYtClrvaRN0ybtW7i8-GBri_JOxWst2AZ4JPKm0RU/edit#gid=0"
+        },
+        "filtersUI": {
+          "values": [
+            {
+              "lookupColumn": "Sender Email",
+              "lookupValue": "={{ $('04 - Parse AI Response').item.json.client_email }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        480,
+        32
+      ],
+      "id": "5aff4186-423d-41ad-ab6e-433b983e988b",
+      "name": "Get row(s) in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "Vvyaf4MtdtLlFXW1",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "0aac953a-1ee3-428e-8d15-2859060a3726",
+              "leftValue": "={{ $json.Status }}",
+              "rightValue": "Paid",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        688,
+        32
+      ],
+      "id": "e6fec900-58c9-41f8-b18a-c772b5f30f18",
+      "name": "09 - IF Paid or Not"
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('04 - Parse AI Response').item.json.client_email }}",
+        "subject": "=Friendly Reminder — Invoice for {{ $('04 - Parse AI Response').item.json.service }}",
+        "message": "=Hi {{ $('04 - Parse AI Response').item.json.client_name }},\n\nI hope you are doing well!\n\nThis is a friendly reminder that your invoice\nfor {{ $('04 - Parse AI Response').item.json.service }} \namounting to ${{ $('04 - Parse AI Response').item.json.amount }} \nwas due on {{ $('04 - Parse AI Response').item.json.due_date }}.\n\nIf you have already made the payment, \nplease ignore this message.\n\nIf you have any questions, feel free to reach out.\n\nThank you for your continued trust in our services!\n\nBest regards,\nYour Team 🙏",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        848,
+        160
+      ],
+      "id": "5596acd0-0f74-4763-a01a-8301d00f7135",
+      "name": "10 — Send Follow Up Email",
+      "webhookId": "4516fb7e-a16b-49d3-aa70-3cde8432fd3a",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "avXEZrxeOKp5jA9m",
+          "name": "Gmail account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "01 - Watch New Invoice": {
+      "main": [
+        [
+          {
+            "node": "02 - Extract Invoice Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "03 - AI Write Invoice Email": {
+      "main": [
+        [
+          {
+            "node": "04 - Parse AI Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "02 - Extract Invoice Data": {
+      "main": [
+        [
+          {
+            "node": "03 - AI Write Invoice Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "04 - Parse AI Response": {
+      "main": [
+        [
+          {
+            "node": "05 - Send Invoice Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "05 - Send Invoice Email": {
+      "main": [
+        [
+          {
+            "node": "06 - Mark Invoice Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "06 - Mark Invoice Sent": {
+      "main": [
+        [
+          {
+            "node": "07 - Wait 3 Days",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "07 - Wait 3 Days": {
+      "main": [
+        [
+          {
+            "node": "Get row(s) in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s) in sheet": {
+      "main": [
+        [
+          {
+            "node": "09 - IF Paid or Not",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "09 - IF Paid or Not": {
+      "main": [
+        [],
+        [
+          {
+            "node": "10 — Send Follow Up Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "20fae160-1fd2-4d1b-96f7-68eb15390925",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "f2f23a593b5262fad10e7ebf366e5500ddfd99f99fc69ff6bdb831511c19c666"
+  },
+  "id": "OUVVS32l97qjDeop",
+  "tags": []
+}
